@@ -7,3 +7,4 @@ Image select helper for Android
 간편히 할 수 있도록 Activity 를 확장하여 Helper 를 만들고 있습니다.
 
 
+이미지를 선택하려는 Activity 에서 ImageSelectHelperActivity 를 extends 해서 사용할 수 있도록 합니다.
