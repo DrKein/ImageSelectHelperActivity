@@ -168,6 +168,17 @@ public class ImageSelectHelperActivity extends Activity {
 		((ImageView)findViewById(R.id.ivImageSelected)).setImageBitmap(bm);
 	}
 	
+	// TODO 소스 이미지 선택 후 이미지 사이즈 요청이 있으면 bitmap options 적용하여 비트맵 로드함.
+	
+	// TODO 이미지 사이즈 수정 후, 카메라 rotation 정보가 있으면 회전 보정함. 
+
+	// TODO 이미지 사이즈 수정 요청이 있으면 resize 함.
+
+	// TODO crop 옵션이 켜져 있으면 이미지 crop 수행함. crop size 입력가능.
+	
+	// TODO 결과 file 을 얻어갈 수 있는 메서드 제공.
+	
+	
 	private Bitmap convertFileToBitmap(File file) {
 		// TODO 원하는 크기의 이미지로 options 설정.
 		Bitmap bitmap = null;
