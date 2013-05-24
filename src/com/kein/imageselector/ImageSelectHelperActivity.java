@@ -18,6 +18,7 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
+import android.graphics.drawable.BitmapDrawable;
 import android.media.ExifInterface;
 import android.net.Uri;
 import android.os.Bundle;
@@ -44,17 +45,27 @@ public class ImageSelectHelperActivity extends Activity {
 
 	@Override
 	public void onSaveInstanceState(Bundle savedInstanceState) {
-	  super.onSaveInstanceState(savedInstanceState);
-	  savedInstanceState.putBoolean("mCropRequested", mCropRequested);
-	  savedInstanceState.putInt("mCropAspectWidth", mCropAspectWidth);
-	  savedInstanceState.putInt("mCropAspectHeight", mCropAspectHeight);
+		super.onSaveInstanceState(savedInstanceState);
+		savedInstanceState.putBoolean("mCropRequested", mCropRequested);
+		savedInstanceState.putInt("mCropAspectWidth", mCropAspectWidth);
+		savedInstanceState.putInt("mCropAspectHeight", mCropAspectHeight);
+		BitmapDrawable drawable = (BitmapDrawable) ((ImageView) findViewById(R.id.ivImageSelected)).getDrawable();
+		if (drawable != null) {
+			Bitmap bitmap = drawable.getBitmap();
+			savedInstanceState.putParcelable("bitmap", bitmap);
+		}
 	}
+
 	@Override
 	public void onRestoreInstanceState(Bundle savedInstanceState) {
-	  super.onRestoreInstanceState(savedInstanceState);
-	  mCropRequested = savedInstanceState.getBoolean("mCropRequested");
-	  mCropAspectWidth = savedInstanceState.getInt("mCropAspectWidth");
-	  mCropAspectHeight = savedInstanceState.getInt("mCropAspectHeight");
+		super.onRestoreInstanceState(savedInstanceState);
+		mCropRequested = savedInstanceState.getBoolean("mCropRequested");
+		mCropAspectWidth = savedInstanceState.getInt("mCropAspectWidth");
+		mCropAspectHeight = savedInstanceState.getInt("mCropAspectHeight");
+		Bitmap bm = (Bitmap) savedInstanceState.getParcelable("bitmap");
+		if (bm != null) {
+			((ImageView) findViewById(R.id.ivImageSelected)).setImageBitmap(bm);
+		}
 	}
 
 	/**
@@ -69,7 +80,7 @@ public class ImageSelectHelperActivity extends Activity {
 			showAlert("Check External Storage.");
 			return;
 		}
-		if( findViewById(R.id.ivImageSelected) == null) {
+		if (findViewById(R.id.ivImageSelected) == null) {
 			showAlert("Your layout should have ImageView name as ivImageSelected.");
 			return;
 		}
@@ -88,12 +99,14 @@ public class ImageSelectHelperActivity extends Activity {
 
 	/**
 	 * crop 이 필요한 경우 설정함. 설정하지 않으면 crop 하지 않음.
+	 * 
 	 * @param width
 	 *            crop size width.
 	 * @param height
 	 *            crop size height.
 	 */
 	private int mCropAspectWidth = 1, mCropAspectHeight = 1;
+
 	public void setCropOption(int aspectX, int aspectY) {
 		mCropRequested = true;
 		mCropAspectWidth = aspectX;
@@ -253,7 +266,7 @@ public class ImageSelectHelperActivity extends Activity {
 
 		// 결과 file 을 얻어갈 수 있는 메서드 제공.
 		saveBitmapToFile(bitmap);
-	
+
 		// show image on ImageView
 		Bitmap bm = BitmapFactory.decodeFile(getTempImageFile().getAbsolutePath());
 		((ImageView) findViewById(R.id.ivImageSelected)).setImageBitmap(bm);
