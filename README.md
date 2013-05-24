@@ -5,8 +5,8 @@ Image select helper for Android
 
 안드로이드에서 이미지를 선택할 때
 ---------------------------------
--갤러리 선택
--카메라 촬영
+* 갤러리 선택
+* 카메라 촬영  
 을 손쉽게 하기 위한 Activity 입니다.
 
 아래의 기능들을 제공합니다.
@@ -14,6 +14,30 @@ Image select helper for Android
 1. 크롭기능 가능.
 2. 가져올 이미지 크기 지정 가능.
 3. 선택된 이미지를 File 로 접근 가능.
+
+샘플 코드
+---------
+여러분의 Activity는 이런 모습이 될것입니다.  
+네, 이게 답니다.
+~~~~~ java
+public class YourActivity extends ImageSelectHelperActivity {
+  @Override
+	protected void onCreate(Bundle savedInstanceState) {
+		super.onCreate(savedInstanceState);
+		setContentView(R.layout.activity_your);
+		findViewById(R.id.button1).setOnClickListener(new View.OnClickListener() {
+			@Override
+			public void onClick(View arg0) {
+				//setImageSizeBoundary(400); // optional. default is 500.
+				//setCropOption(1, 1);  // optional. default is no crop.
+				//setCustomButtons(btnGallery, btnCamera, btnCancel); // you can set these buttons.
+				startSelectImage();
+			}
+		});
+ 	 getSelectedImageFile(); // extract selected & saved image file.
+	}
+}
+~~~~~
 
 사용법
 ---------------------------------
@@ -30,3 +54,5 @@ Image select helper for Android
 귀찮으시면
 ------------
 1. 그냥 startSelectImage() 를 호출하세요.
+
+
