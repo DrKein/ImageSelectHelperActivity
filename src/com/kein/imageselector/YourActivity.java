@@ -14,6 +14,7 @@ public class YourActivity extends ImageSelectHelperActivity {
 		findViewById(R.id.button1).setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View arg0) {
+				//setCropOption(1, 1);
 				startSelectImage();
 			}
 		});

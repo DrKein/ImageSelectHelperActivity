@@ -2,21 +2,29 @@ package com.kein.imageselector;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.channels.FileChannel;
+import java.util.List;
 
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
+import android.media.ExifInterface;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup.LayoutParams;
 import android.view.Window;
@@ -34,6 +42,22 @@ public class ImageSelectHelperActivity extends Activity {
 
 	private final int REQ_CODE_PICK_GALLERY = 900001;
 	private final int REQ_CODE_PICK_CAMERA = 900002;
+	private final int REQ_CODE_PICK_CROP = 900003;
+
+	@Override
+	public void onSaveInstanceState(Bundle savedInstanceState) {
+	  super.onSaveInstanceState(savedInstanceState);
+	  savedInstanceState.putBoolean("mCropRequested", mCropRequested);
+	  savedInstanceState.putInt("mCropAspectWidth", mCropAspectWidth);
+	  savedInstanceState.putInt("mCropAspectHeight", mCropAspectHeight);
+	}
+	@Override
+	public void onRestoreInstanceState(Bundle savedInstanceState) {
+	  super.onRestoreInstanceState(savedInstanceState);
+	  mCropRequested = savedInstanceState.getBoolean("mCropRequested");
+	  mCropAspectWidth = savedInstanceState.getInt("mCropAspectWidth");
+	  mCropAspectHeight = savedInstanceState.getInt("mCropAspectHeight");
+	}
 
 	/**
 	 * Call this to start!
@@ -43,6 +67,14 @@ public class ImageSelectHelperActivity extends Activity {
 			showAlert("we need android.permission.WRITE_EXTERNAL_STORAGE");
 			return;
 		}
+		if (!checkSDisAvailable()) {
+			showAlert("Check External Storage.");
+			return;
+		}
+		if( findViewById(R.id.ivImageSelected) == null) {
+			showAlert("Your layout should have ImageView name as ivImageSelected.");
+			return;
+		}
 		if (mBtnGallery == null) {
 			setDefaultButtons();
 		}
@@ -50,10 +82,48 @@ public class ImageSelectHelperActivity extends Activity {
 		showSelectDialog();
 	}
 
+	public File getSelectedImageFile() {
+		return getTempImageFile();
+	}
+
+	private boolean mCropRequested = false;
+
+	/**
+	 * crop 이 필요한 경우 설정함. 설정하지 않으면 crop 하지 않음.
+	 * @param width
+	 *            crop size width.
+	 * @param height
+	 *            crop size height.
+	 */
+	private int mCropAspectWidth = 1, mCropAspectHeight = 1;
+	public void setCropOption(int aspectX, int aspectY) {
+		mCropRequested = true;
+		mCropAspectWidth = aspectX;
+		mCropAspectHeight = aspectY;
+	}
+
+	/**
+	 * 사용할 이미지의 최대 크기 설정. 가로, 세로 지정한 크기보다 작은 사이즈로 이미지 크기를 조절함. default size :
+	 * 500
+	 * 
+	 * @param sizePixel
+	 *            기본 500
+	 */
+	private int mImageSizeBoundary = 500;
+
+	public void setImageSizeBoundary(int sizePixel) {
+		mImageSizeBoundary = sizePixel;
+	}
+
 	private boolean checkWriteExternalPermission() {
 		String permission = "android.permission.WRITE_EXTERNAL_STORAGE";
 		int res = checkCallingOrSelfPermission(permission);
 		return (res == PackageManager.PERMISSION_GRANTED);
+	}
+
+	private boolean checkSDisAvailable() {
+		String state = Environment.getExternalStorageState();
+		return state.equals(Environment.MEDIA_MOUNTED);
 	}
 
 	/**
@@ -153,49 +223,180 @@ public class ImageSelectHelperActivity extends Activity {
 		if (requestCode == REQ_CODE_PICK_GALLERY && resultCode == Activity.RESULT_OK) {
 			// 갤러리의 경우 곧바로 data 에 uri가 넘어옴.
 			Uri uri = data.getData();
-			copyUriToFile(uri, getTempImageFile()); 
-			sourceImageSelected(getTempImageFile());
+			copyUriToFile(uri, getTempImageFile());
+			if (mCropRequested) {
+				cropImage();
+			} else {
+				doFinalProcess();
+			}
 		} else if (requestCode == REQ_CODE_PICK_CAMERA && resultCode == Activity.RESULT_OK) {
 			// 카메라의 경우 file 로 결과물이 돌아옴.
-			sourceImageSelected(getTempImageFile());
+			// 카메라 회전 보정.
+			correctCameraOrientation(getTempImageFile());
+			if (mCropRequested) {
+				cropImage();
+			} else {
+				doFinalProcess();
+			}
+		} else if (requestCode == REQ_CODE_PICK_CROP && resultCode == Activity.RESULT_OK) {
+			// crop 한 결과는 file로 돌아옴.
+			doFinalProcess();
 		} else {
 			super.onActivityResult(requestCode, resultCode, data);
 		}
 	}
 
-	private void sourceImageSelected(File img) {
-		Bitmap bm = convertFileToBitmap(img);
-		((ImageView)findViewById(R.id.ivImageSelected)).setImageBitmap(bm);
-	}
-	
-	// TODO 소스 이미지 선택 후 이미지 사이즈 요청이 있으면 bitmap options 적용하여 비트맵 로드함.
-	
-	// TODO 이미지 사이즈 수정 후, 카메라 rotation 정보가 있으면 회전 보정함. 
+	private void doFinalProcess() {
+		// sample size 를 적용하여 bitmap load.
+		Bitmap bitmap = loadImageWithSampleSize(getTempImageFile());
 
-	// TODO 이미지 사이즈 수정 요청이 있으면 resize 함.
+		// image boundary size 에 맞도록 이미지 축소.
+		bitmap = resizeImageWithinBoundary(bitmap);
 
-	// TODO crop 옵션이 켜져 있으면 이미지 crop 수행함. crop size 입력가능.
+		// 결과 file 을 얻어갈 수 있는 메서드 제공.
+		saveBitmapToFile(bitmap);
 	
-	// TODO 결과 file 을 얻어갈 수 있는 메서드 제공.
-	
-	
-	private Bitmap convertFileToBitmap(File file) {
-		// TODO 원하는 크기의 이미지로 options 설정.
-		Bitmap bitmap = null;
-		bitmap = BitmapFactory.decodeFile(file.getAbsolutePath());
-		return bitmap;
+		// show image on ImageView
+		Bitmap bm = BitmapFactory.decodeFile(getTempImageFile().getAbsolutePath());
+		((ImageView) findViewById(R.id.ivImageSelected)).setImageBitmap(bm);
 	}
 
-	private Bitmap convertUriToBitmap(Uri uri) {
-		Bitmap bitmap = null;
+	private void saveBitmapToFile(Bitmap bitmap) {
+		File target = getTempImageFile();
 		try {
-			InputStream is = getContentResolver().openInputStream(uri);
-			bitmap = BitmapFactory.decodeStream(is);
-			is.close();
-		} catch (Exception e) {
+			FileOutputStream fos = new FileOutputStream(target, false);
+			bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos);
+			fos.close();
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
 			e.printStackTrace();
 		}
+	}
+
+	/** 이미지 사이즈 수정 후, 카메라 rotation 정보가 있으면 회전 보정함. */
+	private void correctCameraOrientation(File imgFile) {
+		Bitmap bitmap = loadImageWithSampleSize(imgFile);
+		try {
+			ExifInterface exif = new ExifInterface(imgFile.getAbsolutePath());
+			int exifOrientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+			int exifRotateDegree = exifOrientationToDegrees(exifOrientation);
+			bitmap = rotateImage(bitmap, exifRotateDegree);
+			saveBitmapToFile(bitmap);
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+	}
+
+	private Bitmap rotateImage(Bitmap bitmap, int degrees) {
+		if (degrees != 0 && bitmap != null) {
+			Matrix m = new Matrix();
+			m.setRotate(degrees, (float) bitmap.getWidth() / 2, (float) bitmap.getHeight() / 2);
+			try {
+				Bitmap converted = Bitmap.createBitmap(bitmap, 0, 0, bitmap.getWidth(), bitmap.getHeight(), m, true);
+				if (bitmap != converted) {
+					bitmap.recycle();
+					bitmap = converted;
+				}
+			} catch (OutOfMemoryError ex) {
+			}
+		}
 		return bitmap;
+	}
+
+	/**
+	 * EXIF정보를 회전각도로 변환하는 메서드
+	 * 
+	 * @param exifOrientation
+	 *            EXIF 회전각
+	 * @return 실제 각도
+	 */
+	private int exifOrientationToDegrees(int exifOrientation) {
+		if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_90) {
+			return 90;
+		} else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_180) {
+			return 180;
+		} else if (exifOrientation == ExifInterface.ORIENTATION_ROTATE_270) {
+			return 270;
+		}
+		return 0;
+	}
+
+	/** 원하는 크기의 이미지로 options 설정. */
+	private Bitmap loadImageWithSampleSize(File file) {
+		BitmapFactory.Options options = new BitmapFactory.Options();
+		options.inJustDecodeBounds = true;
+		BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+		int width = options.outWidth;
+		int height = options.outHeight;
+		int longSide = Math.max(width, height);
+		int sampleSize = 1;
+		if (longSide > mImageSizeBoundary) {
+			sampleSize = longSide / mImageSizeBoundary;
+		}
+		options.inJustDecodeBounds = false;
+		options.inSampleSize = sampleSize;
+		options.inPurgeable = true;
+		options.inDither = false;
+
+		Bitmap bitmap = BitmapFactory.decodeFile(file.getAbsolutePath(), options);
+		return bitmap;
+	}
+
+	/**
+	 * mImageSizeBoundary 크기로 이미지 크기 조정. mImageSizeBoundary 보다 작은 경우 resize하지
+	 * 않음.
+	 */
+	private Bitmap resizeImageWithinBoundary(Bitmap bitmap) {
+		int width = bitmap.getWidth();
+		int height = bitmap.getHeight();
+
+		if (width > height) {
+			if (width > mImageSizeBoundary) {
+				bitmap = resizeBitmapWithWidth(bitmap, mImageSizeBoundary);
+			}
+		} else {
+			if (height > mImageSizeBoundary) {
+				bitmap = resizeBitmapWithHeight(bitmap, mImageSizeBoundary);
+			}
+		}
+		return bitmap;
+	}
+
+	private Bitmap resizeBitmapWithHeight(Bitmap source, int wantedHeight) {
+		if (source == null)
+			return null;
+
+		int width = source.getWidth();
+		int height = source.getHeight();
+
+		float resizeFactor = wantedHeight * 1f / height;
+
+		int targetWidth, targetHeight;
+		targetWidth = (int) (width * resizeFactor);
+		targetHeight = (int) (height * resizeFactor);
+
+		Bitmap resizedBitmap = Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true);
+
+		return resizedBitmap;
+	}
+
+	private Bitmap resizeBitmapWithWidth(Bitmap source, int wantedWidth) {
+		if (source == null)
+			return null;
+
+		int width = source.getWidth();
+		int height = source.getHeight();
+
+		float resizeFactor = wantedWidth * 1f / width;
+
+		int targetWidth, targetHeight;
+		targetWidth = (int) (width * resizeFactor);
+		targetHeight = (int) (height * resizeFactor);
+
+		Bitmap resizedBitmap = Bitmap.createScaledBitmap(source, targetWidth, targetHeight, true);
+
+		return resizedBitmap;
 	}
 
 	private void copyUriToFile(Uri srcUri, File target) {
@@ -205,7 +406,7 @@ public class ImageSelectHelperActivity extends Activity {
 		FileChannel fcout = null;
 		try {
 			// 스트림 생성
-			inputStream = (FileInputStream)getContentResolver().openInputStream(srcUri);
+			inputStream = (FileInputStream) getContentResolver().openInputStream(srcUri);
 			outputStream = new FileOutputStream(target);
 
 			// 채널 생성
@@ -237,4 +438,23 @@ public class ImageSelectHelperActivity extends Activity {
 		}
 	}
 
+	private void cropImage() {
+		Intent intent = new Intent("com.android.camera.action.CROP");
+		intent.setType("image/*");
+		List<ResolveInfo> cropToolLists = getPackageManager().queryIntentActivities(intent, 0);
+		int size = cropToolLists.size();
+		if (size == 0) {
+			// crop 을 처리할 앱이 없음. 곧바로 처리.
+			doFinalProcess();
+		} else {
+			intent.setData(Uri.fromFile(getTempImageFile()));
+			intent.putExtra("aspectX", mCropAspectWidth);
+			intent.putExtra("aspectY", mCropAspectHeight);
+			intent.putExtra("output", Uri.fromFile(getTempImageFile()));
+			Intent i = new Intent(intent);
+			ResolveInfo res = cropToolLists.get(0);
+			i.setComponent(new ComponentName(res.activityInfo.packageName, res.activityInfo.name));
+			startActivityForResult(i, REQ_CODE_PICK_CROP);
+		}
+	}
 }
