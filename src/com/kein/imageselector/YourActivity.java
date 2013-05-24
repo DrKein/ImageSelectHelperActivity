@@ -1,7 +1,6 @@
 package com.kein.imageselector;
 
 import android.os.Bundle;
-import android.view.Menu;
 import android.view.View;
 
 public class YourActivity extends ImageSelectHelperActivity {
@@ -14,17 +13,14 @@ public class YourActivity extends ImageSelectHelperActivity {
 		findViewById(R.id.button1).setOnClickListener(new View.OnClickListener() {
 			@Override
 			public void onClick(View arg0) {
-				//setCropOption(1, 1);
+				//setImageSizeBoundary(400); // optional. default is 500.
+				//setCropOption(1, 1);  // optional. default is no crop.
+				//setCustomButtons(btnGallery, btnCamera, btnCancel); // you can set these buttons.
 				startSelectImage();
 			}
 		});
-	}
-
-	@Override
-	public boolean onCreateOptionsMenu(Menu menu) {
-		// Inflate the menu; this adds items to the action bar if it is present.
-		getMenuInflater().inflate(R.menu.your, menu);
-		return true;
+		
+		getSelectedImageFile(); // extract selected & saved image file.
 	}
 
 }
